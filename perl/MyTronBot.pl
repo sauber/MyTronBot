@@ -66,6 +66,48 @@ sub distancetowall {
   return --$count;
 }
 
+# Close combat
+# When bots are in close proximity, use quantum computing to find best solution
+# Need to return the score for any given direction
+# 
+sub closecombat {
+  my $botdistance = 3;
+  my(@now) = @{ $_map->{myPos} };
+  my(@him) = @{ $_map->{opponentPos} };
+
+  # Create a regional map
+  my $minx = $now[0]; $minx = $him[0] if $him[0] < $now[0];
+  my $miny = $now[1]; $miny = $him[1] if $him[1] < $now[1];
+  my $maxx = $now[0]; $maxx = $him[0] if $him[0] > $now[0];
+  my $maxy = $now[1]; $maxy = $him[1] if $him[1] > $now[1];
+  $minx -= $botdistance; $minx = 0 if $minx < 0;
+  $miny -= $botdistance; $miny = 0 if $miny < 0;
+  $maxx += $botdistance; $maxx = $_map->{width}  if $minx > $_map->{width};
+  $maxy += $botdistance; $maxy = $_map->{height} if $miny > $_map->{height};
+
+  # 0 = we loose
+  # 50 = neutral
+  # 100 = we win
+  my %regional;
+  for my $x ( $minx .. $maxx ) {
+    for my $y ( $miny .. $maxy ) {
+      $regional{$x,$y} = 50; # 50 neutral value
+      $regional{$x,$y} = 0 if $_map->IsWall($x, $y);
+    }
+  }
+
+  # Test all possibilities, each with a new map
+  for my $mymove ( 0 .. 3 ) {
+    for my $hismove ( 0 .. 3 ) {
+      # Some recursive method calls
+      #decisiontree($botdistance, $mymove, $hismove, $regional, $overlay);
+    }
+  }
+  
+  
+}
+
+
 # Find longest distance in all four directions
 #
 sub chooseMove {
