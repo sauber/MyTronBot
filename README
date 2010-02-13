@@ -1,0 +1,10 @@
+MyTronBot.pl
+
+On http://damienlearnsperl.blogspot.com/2010/02/google-ai-challenge-move-perl-up-charts.html
+Damien calls for perl programmers to participate in Google's AI Challenge.
+Currently the best perl program ranks 176th, which I agree is too bad.
+
+This is my attempt to improve the ranking for a perl based program.
+I invite everybody to fork and submit patches with improved AI decision.
+
+The competition ends on 2010-02-26.
