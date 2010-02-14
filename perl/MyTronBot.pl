@@ -66,6 +66,58 @@ sub distancetowall {
   return --$count;
 }
 
+########################################################################
+###
+### Closed Combat
+###
+########################################################################
+
+# Given two player positions, the original map, and map modifications
+# What are the possible next moves by both players.
+# Discard going into walls, and discard going to same position.
+# Include map modification for each possible move.
+# If no moves available, say why not, such as:
+#   1) Player one has no moves: -1000 points
+#   2) Player two has no moves: 1000 points
+#   3) Both cannot move: -500
+#   4) Players too far from each other: -2
+#   5) TODO: Players too far away from original location
+#   6) Number of possible moves until one of the other conditions
+#
+sub closemoves {
+  my($x1,$y1,$x2,$y2,$map) = @_;
+
+  my $maxdistance = 3;
+  my $score = 1;
+  my $playeronecanmove;
+  my $playertwocanmove;
+  for my $mymove ( 0 .. 3 ) {
+    my @mynew = newpos( $x1, $y1, $mymove );
+    my $iswall = $map->{$mynew[0],$mynew[1]} || $_map->IsWall( @mynew );
+    next if $iswall;
+    ++$playeronecanmove;
+    for my $hismove ( 0 .. 3 ) {
+      my @hisnew = newpos( $x2, $y2, $hismove );
+      my $iswall = $map->{$hisnew[0],$hisnew[1]} || $_map->IsWall( @hisnew );
+      next if $iswall;
+      ++$playertwocanmove;
+      my $deltax = abs( $mynew[0] - $hisnew[0] );
+      my $deltay = abs( $mynew[1] - $hisnew[1] );
+      if ( $deltax > $maxdistance or $deltay > $maxdistance ) {
+        $score -= 1;
+      } else {
+        # Recursive check next moves
+        my $newmap = { %map, "$mynew[0],$mynew[1]"=>1, "$hisnew[0],$hisnew[1]"=>1 };
+        $score += closemoves(@mynew, @hisnew, $newmap);
+      }
+    }
+  }
+  return  -1000 if ! $playeronecanmove and   $playertwocanmove;
+  return   1000 if   $playeronecanmove and ! $playertwocanmove;
+  return   -500 if ! $playeronecanmove and ! $playertwocanmove;
+  return $score if   $playeronecanmove and   $playertwocanmove;
+}
+
 # Close combat
 # When bots are in close proximity, use quantum computing to find best solution
 # Need to return the score for any given direction
