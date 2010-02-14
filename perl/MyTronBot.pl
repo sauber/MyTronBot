@@ -16,11 +16,15 @@ while(1){
     Tron::MakeMove($move);
 }
 
+# Basic directions
+#
 # 0 = North
 # 1 = East
 # 2 = South
 # 3 = West
 
+# Directions next to straight ahead
+#
 #       WNE
 #       012
 #       ^^^
@@ -32,6 +36,25 @@ while(1){
 #       vvv
 #       876
 #       WSE
+
+# Ranges:
+#   Immediate: This Move
+#   Near range: 3
+#   Mid range: 6
+#   Far range: > 6
+
+# Give a position and a move, what is new position
+#
+sub newpos {
+  my($x,$y,$move) = @_;
+
+  --$y if $move == 0; # North
+  ++$x if $move == 1; # East
+  ++$y if $move == 2; # South
+  --$x if $move == 3; # West
+  my @new = ( $x, $y );
+  return @new;
+}
 
 # Calculate distance to wall in a given direction
 #
@@ -81,30 +104,30 @@ sub distancetowall {
 #   2) Player two has no moves: 1000 points
 #   3) Both cannot move: -500
 #   4) Players too far from each other: -2
-#   5) TODO: Players too far away from original location: 0
-#   6) Number of possible moves until one of the other conditions
+#   5) Players too far away from original location: 0
+#   6) Players can only collide: -900 (TODO)
+#   7) Number of possible moves until one of the other conditions
 #
 sub closemoves {
-  my($origx,$origy,$x1,$y1,$x2,$y2,$map) = @_;
+  my($origx,$origy,$x1,$y1,$x2,$y2,$map,$depth,$firstmove) = @_;
 
+  return -1 if $depth > 3;
   my $maxdistance = 3;
   my $score = 1;
   my $playeronecanmove;
   my $playertwocanmove;
   my $playeroneisfaraway;
   my $playertwoisfaraway;
-  for my $mymove ( 0 .. 3 ) {
+  my $nummoves = 0;
+  my @dir = (0, 1, 2, 3);
+  @dir = ( $firstmove ) if $firstmove;
+  for my $mymove ( @dir ) {
     # Player 1 hits a wall ?
     my @mynew = newpos( $x1, $y1, $mymove );
     my $iswall = $map->{$mynew[0],$mynew[1]} || $_map->IsWall( @mynew );
     next if $iswall;
     ++$playeronecanmove;
 
-    # Player 1 too far away from origin
-    my $deltax = abs( $mynew[0] - $origx );
-    my $deltay = abs( $mynew[1] - $origy );
-    next if $deltax > $maxdistance or $deltay > $maxdistance;
-    
     for my $hismove ( 0 .. 3 ) {
       # Player 2 hits a wall ?
       my @hisnew = newpos( $x2, $y2, $hismove );
@@ -112,27 +135,43 @@ sub closemoves {
       next if $iswall;
       ++$playertwocanmove;
 
+      ++$nummoves;
+
+      # Player 1 too far away from origin
+      my $deltax = abs( $mynew[0] - $origx );
+      my $deltay = abs( $mynew[1] - $origy );
+      next if $deltax > $maxdistance or $deltay > $maxdistance;
+
       # Player 2 too far away from origin
-      my $deltax = abs( $hisnew[0] - $origx );
-      my $deltay = abs( $hisnew[1] - $origy );
+      $deltax = abs( $hisnew[0] - $origx );
+      $deltay = abs( $hisnew[1] - $origy );
       next if $deltax > $maxdistance or $deltay > $maxdistance;
 
       # Distance between players
       $deltax = abs( $mynew[0] - $hisnew[0] );
       $deltay = abs( $mynew[1] - $hisnew[1] );
-      if ( $deltax > $maxdistance or $deltay > $maxdistance ) {
+      if ( $deltax == 0 and $deltay == 0 ) {
+        # XXX: This is flawed.
+        # XXX: Should only apply if there are no other moves available.
+        #$score -= 900;
+      } elsif ( $deltax > $maxdistance or $deltay > $maxdistance ) {
         $score -= 1;
       } else {
         # Recursive check all possible next moves
         my $newmap = { %map, "$mynew[0],$mynew[1]"=>1, "$hisnew[0],$hisnew[1]"=>1 };
-        $score += closemoves($origx,$origy,@mynew, @hisnew, $newmap);
+        $score += closemoves($origx,$origy,@mynew, @hisnew, $newmap, 1+$depth);
       }
     }
   }
-  return  -1000 if ! $playeronecanmove and   $playertwocanmove;
-  return   1000 if   $playeronecanmove and ! $playertwocanmove;
-  return   -500 if ! $playeronecanmove and ! $playertwocanmove;
-  return $score if   $playeronecanmove and   $playertwocanmove;
+  $score =  -1000 if ! $playeronecanmove and   $playertwocanmove;
+  $score =   1000 if   $playeronecanmove and ! $playertwocanmove;
+  $score =   -500 if ! $playeronecanmove and ! $playertwocanmove;
+  #return $score if   $playeronecanmove and   $playertwocanmove;
+  $score = -900 if $nummoves == 1;
+  $debug = " " x $depth;
+  $debug .= "score $score, orig($origx,$origy) my($x1,$y1) him($x2,$y2)";
+  warn "$debug\n";
+  return $score;
 }
 
 # Close combat
@@ -140,46 +179,25 @@ sub closemoves {
 # Need to return the score for any given direction
 # 
 sub closecombat {
-  my $botdistance = 3;
-  my(@now) = @{ $_map->{myPos} };
-  my(@him) = @{ $_map->{opponentPos} };
+  my @dir = @_;
 
-  # Create a regional map
-  my $minx = $now[0]; $minx = $him[0] if $him[0] < $now[0];
-  my $miny = $now[1]; $miny = $him[1] if $him[1] < $now[1];
-  my $maxx = $now[0]; $maxx = $him[0] if $him[0] > $now[0];
-  my $maxy = $now[1]; $maxy = $him[1] if $him[1] > $now[1];
-  $minx -= $botdistance; $minx = 0 if $minx < 0;
-  $miny -= $botdistance; $miny = 0 if $miny < 0;
-  $maxx += $botdistance; $maxx = $_map->{width}  if $minx > $_map->{width};
-  $maxy += $botdistance; $maxy = $_map->{height} if $miny > $_map->{height};
-
-  # 0 = we loose
-  # 50 = neutral
-  # 100 = we win
-  my %regional;
-  for my $x ( $minx .. $maxx ) {
-    for my $y ( $miny .. $maxy ) {
-      $regional{$x,$y} = 50; # 50 neutral value
-      $regional{$x,$y} = 0 if $_map->IsWall($x, $y);
-    }
+  my @results = (0, 0, 0, 0);
+  my $midx = $_map->{opponentPos}->[0] + ( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] ) / 2;
+  my $midy = $_map->{opponentPos}->[0] + ( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] ) / 2;
+  for my $move ( @dir ) {
+    $results[$move] = closemoves($midx,$midy,@{ $_map->{myPos} }, @{ $_map->{opponentPos} }, {}, 0, $move);
   }
-
-  # Test all possibilities, each with a new map
-  for my $mymove ( 0 .. 3 ) {
-    for my $hismove ( 0 .. 3 ) {
-      # Some recursive method calls
-      #decisiontree($botdistance, $mymove, $hismove, $regional, $overlay);
-    }
-  }
-  
-  
+  warn "Closecombat: @results\n";
+  return @results;
 }
 
 
 # Find longest distance in all four directions
 #
 sub chooseMove {
+
+  # Try out close combat for each move
+  #closecombat(0, 1, 2, 3);
   my $move = 0;
   my $longest = 0;
   for my $dir ( 0..11 ) {
