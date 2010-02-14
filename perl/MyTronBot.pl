@@ -81,34 +81,51 @@ sub distancetowall {
 #   2) Player two has no moves: 1000 points
 #   3) Both cannot move: -500
 #   4) Players too far from each other: -2
-#   5) TODO: Players too far away from original location
+#   5) TODO: Players too far away from original location: 0
 #   6) Number of possible moves until one of the other conditions
 #
 sub closemoves {
-  my($x1,$y1,$x2,$y2,$map) = @_;
+  my($origx,$origy,$x1,$y1,$x2,$y2,$map) = @_;
 
   my $maxdistance = 3;
   my $score = 1;
   my $playeronecanmove;
   my $playertwocanmove;
+  my $playeroneisfaraway;
+  my $playertwoisfaraway;
   for my $mymove ( 0 .. 3 ) {
+    # Player 1 hits a wall ?
     my @mynew = newpos( $x1, $y1, $mymove );
     my $iswall = $map->{$mynew[0],$mynew[1]} || $_map->IsWall( @mynew );
     next if $iswall;
     ++$playeronecanmove;
+
+    # Player 1 too far away from origin
+    my $deltax = abs( $mynew[0] - $origx );
+    my $deltay = abs( $mynew[1] - $origy );
+    next if $deltax > $maxdistance or $deltay > $maxdistance;
+    
     for my $hismove ( 0 .. 3 ) {
+      # Player 2 hits a wall ?
       my @hisnew = newpos( $x2, $y2, $hismove );
       my $iswall = $map->{$hisnew[0],$hisnew[1]} || $_map->IsWall( @hisnew );
       next if $iswall;
       ++$playertwocanmove;
-      my $deltax = abs( $mynew[0] - $hisnew[0] );
-      my $deltay = abs( $mynew[1] - $hisnew[1] );
+
+      # Player 2 too far away from origin
+      my $deltax = abs( $hisnew[0] - $origx );
+      my $deltay = abs( $hisnew[1] - $origy );
+      next if $deltax > $maxdistance or $deltay > $maxdistance;
+
+      # Distance between players
+      $deltax = abs( $mynew[0] - $hisnew[0] );
+      $deltay = abs( $mynew[1] - $hisnew[1] );
       if ( $deltax > $maxdistance or $deltay > $maxdistance ) {
         $score -= 1;
       } else {
-        # Recursive check next moves
+        # Recursive check all possible next moves
         my $newmap = { %map, "$mynew[0],$mynew[1]"=>1, "$hisnew[0],$hisnew[1]"=>1 };
-        $score += closemoves(@mynew, @hisnew, $newmap);
+        $score += closemoves($origx,$origy,@mynew, @hisnew, $newmap);
       }
     }
   }
