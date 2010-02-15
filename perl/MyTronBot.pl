@@ -7,6 +7,7 @@
 
 # module containing Tron library functions
 use Tron;
+use Time::HiRes qw(gettimeofday tv_interval);
 
 #global variable storing the current state of the map
 my $_map = new Map();
@@ -78,6 +79,7 @@ sub newpos {
   ++$x if $move == 1;    # East
   ++$y if $move == 2;    # South
   --$x if $move == 3;    # West
+  #die "newpos $x, $y, $move\n" if $x<0 or $y<0 or $x>15 or $y>15;
   my @new = ( $x, $y );
   return @new;
 }
@@ -308,7 +310,7 @@ sub nearrange {
     }
   }
 
-  warn "nearrange: @result\n";
+  #warn "nearrange: @result\n";
   return @result;
 }
 
@@ -336,7 +338,7 @@ sub closecombat {
     {}, $maxdepth, $move
   );
 
-  warn "Closecombat for move $move: $score\n";
+  #warn "Closecombat for move $move: $score\n";
   return $score;
 }
 
@@ -371,7 +373,7 @@ sub closemoves {
   #my $playertwoisfaraway;
   #my $nummoves = 0;
 
-  warn "closemove $origx, $origy, $x1, $y1, $x2, $y2,, $depth, $firstmove \n";
+  #warn "closemove $origx, $origy, $x1, $y1, $x2, $y2,, $depth, $firstmove \n";
   # Are we too far away from origin or each other
   my($deltax,$deltay);
   $deltax = abs( $x1 - $origx );
@@ -383,7 +385,7 @@ sub closemoves {
   $deltax = abs( $x1 - $x2 );
   $deltay = abs( $y1 - $y2 );
   return 0 if $deltax > $maxdistance or $deltay > $maxdistance;
-  warn "Still close enough\n";
+  #warn "Still close enough\n";
 
   # Check possible moves for me.
   my @mydir;
@@ -392,18 +394,32 @@ sub closemoves {
   } else {
     for my $move ( 0 .. 3 ) {
       my @new = newpos( $x1, $y1, $move );
+      #if ( ( $new[0]<=0 or $new[1]<=0 ) or ( $new[0]>=15 or $new[1]>=15 ) ) {
+      #  warn "me:  $x1, $y1, $move\n";
+      #  warn "him: $x2, $y2, $move\n";
+      #  warn "me IsWall: @new\n" if $new[0] <  0 or $new[1] <  0;
+      #  warn "me IsWall: @new\n" if $new[0] > 15 or $new[1] > 15;
+      #}
       my $iswall = $map->{"$new[0],$new[1]"} || $_map->IsWall(@new);
       push @mydir, $move unless $iswall;
     }
   }
+  #warn "depth $depth me $x1,$y1 moves @mydir\n";
 
   # Check possible moves for opponent.
   my @hisdir;
   for my $move ( 0 .. 3 ) {
     my @new = newpos( $x2, $y2, $move );
+    #if ( ( $new[0]<=0 or $new[1]<=0 ) or ( $new[0]>=15 or $new[1]>=15 ) ) {
+    #  warn "me:  $x1, $y1, $move\n";
+    #  warn "him: $x2, $y2, $move\n";
+    #  warn "his IsWall: @new\n" if $new[0] <  0 or $new[1] <  0;
+    #  warn "his IsWall: @new\n" if $new[0] > 15 or $new[1] > 15;
+    #}
     my $iswall = $map->{"$new[0],$new[1]"} || $_map->IsWall(@new);
     push @hisdir, $move unless $iswall;
   }
+  #warn "depth $depth him $x2,$y2 moves @hisdir\n";
 
   # If one or both of us cannot move...
   return  1000 if   @mydir and ! @hisdir; # I win
@@ -428,14 +444,14 @@ sub closemoves {
     my @mynew = newpos( $x1, $y1, $mymove );
 
     for my $hismove ( @hisdir ) {
-      my @hisnew = newpos( $x2, $y2, $mymove );
+      my @hisnew = newpos( $x2, $y2, $hismove );
   
       # Recursive check all possible next moves
       my $newmap =
         { %$map, "$mynew[0],$mynew[1]" => 1, "$hisnew[0],$hisnew[1]" => 1 };
       my $score =
         closemoves( $origx, $origy, @mynew, @hisnew, $newmap, $depth );
-      warn "  $depth $score @mynew, @hisnew\n";
+        #warn "  $depth $score @mynew, @hisnew\n";
       return $score if $score == -1000 or $score == 1000;
     }
   }
@@ -522,21 +538,23 @@ sub choosedirections {
 # Follow whichever makes a decision first.
 #
 sub chooseMove {
+  my $t0 = [gettimeofday()];
 
   #warn "=== Startpos: @{ $_map->{myPos} }\n";
   my @dir = ( 0, 1, 2, 3 );    # Initial directions. Anything is possible.
   @dir = choosedirections( immediate(@dir) );
   if ( @dir > 1 ) {
-#    @dir = choosedirections( nearrange(@dir) );
-#    if ( @dir > 1 ) {
+    @dir = choosedirections( nearrange(@dir) );
+    if ( @dir > 1 ) {
       @dir = choosedirections( midrange(@dir) );
       if ( @dir > 1 ) {
         @dir = choosedirections( longrange(@dir) );
       }
-#    }
+    }
   }
   my $bestmove = shift @dir;
 
   #warn "Best direction: $bestmove\n";
+  #warn sprintf "Time spent: %s\n, ", tv_interval ( $t0 );
   return ++$bestmove;
 }
