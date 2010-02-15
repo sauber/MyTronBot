@@ -298,9 +298,9 @@ sub nearrange {
     my $deltay = abs( $_map->{myPos}->[1] - $_map->{opponentPos}->[1] );
     if ( $deltax <= $maxdistance and $deltay <= $maxdistance ) {
 
-      #$result[$move] = closecombat($move);
+      $result[$move] = closecombat($move);
       # XXX: For now just try stay close to opponent
-      $result[$move] = 2;
+      #$result[$move] = 2;
     } else {
 
       # Too far apart for close combat. But a valid move nevertheless.
@@ -308,7 +308,7 @@ sub nearrange {
     }
   }
 
-  #warn "nearrange: @result\n";
+  warn "nearrange: @result\n";
   return @result;
 }
 
@@ -317,8 +317,6 @@ sub nearrange {
 # Calculate overall score for all required direction.
 #
 sub closecombat {
-
-  #my @dir = @_;
   my $move = shift;
 
   # Origin: Position in middle of me an opponent
@@ -326,12 +324,12 @@ sub closecombat {
     $_map->{opponentPos}->[0] +
     ( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] ) / 2;
   my $midy =
-    $_map->{opponentPos}->[0] +
-    ( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] ) / 2;
+    $_map->{opponentPos}->[1] +
+    ( $_map->{myPos}->[1] - $_map->{opponentPos}->[1] ) / 2;
 
   my @result   = ( 0, 0, 0, 0 );
   my $maxdepth = 3;                # Don't care what happens after 4 moves
-  my $score    = closemoves(
+  my $score    = 1 + closemoves(
     $midx, $midy,
     @{ $_map->{myPos} },
     @{ $_map->{opponentPos} },
@@ -365,77 +363,83 @@ sub closecombat {
 sub closemoves {
   my ( $origx, $origy, $x1, $y1, $x2, $y2, $map, $depth, $firstmove ) = @_;
 
-  return -1
-    if --$depth <= 0;    # Save the subroutine call and check one level up
   my $maxdistance = 3;
-  my $score       = 1;
-  my $playeronecanmove;
-  my $playertwocanmove;
-  my $playeroneisfaraway;
-  my $playertwoisfaraway;
-  my $nummoves = 0;
-  my @dir = ( 0, 1, 2, 3 );
-  @dir = ($firstmove) if $firstmove;
+  #my $score       = 1;
+  #my $playeronecanmove;
+  #my $playertwocanmove;
+  #my $playeroneisfaraway;
+  #my $playertwoisfaraway;
+  #my $nummoves = 0;
 
-  for my $mymove (@dir) {
+  warn "closemove $origx, $origy, $x1, $y1, $x2, $y2,, $depth, $firstmove \n";
+  # Are we too far away from origin or each other
+  my($deltax,$deltay);
+  $deltax = abs( $x1 - $origx );
+  $deltay = abs( $y1 - $origy );
+  return 0 if $deltax > $maxdistance or $deltay > $maxdistance;
+  $deltax = abs( $x2 - $origx );
+  $deltay = abs( $y2 - $origy );
+  return 0 if $deltax > $maxdistance or $deltay > $maxdistance;
+  $deltax = abs( $x1 - $x2 );
+  $deltay = abs( $y1 - $y2 );
+  return 0 if $deltax > $maxdistance or $deltay > $maxdistance;
+  warn "Still close enough\n";
 
-    # Player 1 hits a wall ?
-    my @mynew = newpos( $x1, $y1, $mymove );
-    my $iswall = $map->{ $mynew[0], $mynew[1] } || $_map->IsWall(@mynew);
-    next if $iswall;
-    ++$playeronecanmove;
-
-    for my $hismove ( 0 .. 3 ) {
-
-      # Player 2 hits a wall ?
-      my @hisnew = newpos( $x2, $y2, $hismove );
-      my $iswall = $map->{ $hisnew[0], $hisnew[1] } || $_map->IsWall(@hisnew);
-      next if $iswall;
-      ++$playertwocanmove;
-
-      ++$nummoves;
-
-      # Player 1 too far away from origin
-      my $deltax = abs( $mynew[0] - $origx );
-      my $deltay = abs( $mynew[1] - $origy );
-      next if $deltax > $maxdistance or $deltay > $maxdistance;
-
-      # Player 2 too far away from origin
-      $deltax = abs( $hisnew[0] - $origx );
-      $deltay = abs( $hisnew[1] - $origy );
-      next if $deltax > $maxdistance or $deltay > $maxdistance;
-
-      # Distance between players
-      $deltax = abs( $mynew[0] - $hisnew[0] );
-      $deltay = abs( $mynew[1] - $hisnew[1] );
-      if ( $deltax == 0 and $deltay == 0 ) {
-
-        # XXX: This is flawed.
-        # XXX: Should only apply if there are no other moves available.
-        #$score -= 900;
-      } elsif ( $deltax > $maxdistance or $deltay > $maxdistance ) {
-        $score -= 1;
-      } else {
-
-        # Recursive check all possible next moves
-        my $newmap =
-          { %$map, "$mynew[0],$mynew[1]" => 1, "$hisnew[0],$hisnew[1]" => 1 };
-        $score +=
-          closemoves( $origx, $origy, @mynew, @hisnew, $newmap, 1 + $depth );
-      }
+  # Check possible moves for me.
+  my @mydir;
+  if ( $firstmove ) {
+    @mydir = ( $firstmove ); # Move is decided for us
+  } else {
+    for my $move ( 0 .. 3 ) {
+      my @new = newpos( $x1, $y1, $move );
+      my $iswall = $map->{"$new[0],$new[1]"} || $_map->IsWall(@new);
+      push @mydir, $move unless $iswall;
     }
   }
-  $score = -1000 if !$playeronecanmove and $playertwocanmove;
-  $score = 1000  if $playeronecanmove  and !$playertwocanmove;
-  $score = -500  if !$playeronecanmove and !$playertwocanmove;
 
-  #return $score if   $playeronecanmove and   $playertwocanmove;
-  $score = -900 if $nummoves == 1;
-  my $debug = " " x $depth;
-  $debug .= "score $score, orig($origx,$origy) my($x1,$y1) him($x2,$y2)";
+  # Check possible moves for opponent.
+  my @hisdir;
+  for my $move ( 0 .. 3 ) {
+    my @new = newpos( $x2, $y2, $move );
+    my $iswall = $map->{"$new[0],$new[1]"} || $_map->IsWall(@new);
+    push @hisdir, $move unless $iswall;
+  }
 
-  #warn "$debug\n";
-  return $score;
+  # If one or both of us cannot move...
+  return  1000 if   @mydir and ! @hisdir; # I win
+  return -1000 if ! @mydir and   @hisdir; # He win
+  return  -500 if ! @mydir and ! @hisdir; # Nobody moves. Its's a draw.
+  
+  # Are we stumbling into each other?
+  if ( @mydir == 1 and @hisdir == 1 ) {
+    my @mynew = newpos($x1,$y1, $mydir[0]);
+    my @hisnew = newpos($x2,$y2, $hisdir[0]);
+    if ( $mynew[0] == $hisnew[0] && $mynew[1] == $hisnew[1] ) {
+      return -500; # Yes, we will hit each other
+    }
+  }
+
+  # Can we recurse any deeper?
+  --$depth;
+  return 0 if $depth <= 0; # It's undecided
+
+  # Check all possible combinations of valid moves
+  for my $mymove ( @mydir ) {
+    my @mynew = newpos( $x1, $y1, $mymove );
+
+    for my $hismove ( @hisdir ) {
+      my @hisnew = newpos( $x2, $y2, $mymove );
+  
+      # Recursive check all possible next moves
+      my $newmap =
+        { %$map, "$mynew[0],$mynew[1]" => 1, "$hisnew[0],$hisnew[1]" => 1 };
+      my $score =
+        closemoves( $origx, $origy, @mynew, @hisnew, $newmap, $depth );
+      warn "  $depth $score @mynew, @hisnew\n";
+      return $score if $score == -1000 or $score == 1000;
+    }
+  }
+  return 1;
 }
 
 ########################################################################
@@ -523,13 +527,13 @@ sub chooseMove {
   my @dir = ( 0, 1, 2, 3 );    # Initial directions. Anything is possible.
   @dir = choosedirections( immediate(@dir) );
   if ( @dir > 1 ) {
-    @dir = choosedirections( nearrange(@dir) );
-    if ( @dir > 1 ) {
+#    @dir = choosedirections( nearrange(@dir) );
+#    if ( @dir > 1 ) {
       @dir = choosedirections( midrange(@dir) );
       if ( @dir > 1 ) {
         @dir = choosedirections( longrange(@dir) );
       }
-    }
+#    }
   }
   my $bestmove = shift @dir;
 
