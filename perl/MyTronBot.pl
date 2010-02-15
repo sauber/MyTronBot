@@ -198,11 +198,10 @@ sub midrange {
 
     #warn "Distancescore: $score\n";
     if ( $score >= 2 ) {
-      my $creepscore = creeparound( @now, $move );
+      my $creepscore = 1 + creeparound( @now, $move );
 
       #warn "Creepscore: $creepscore\n";
-      # XXX: Wrong!. It should be 1+$creepscore if higher than current $score.
-      $score += $creepscore;
+      $score = $creepscore if $creepscore > $score;
 
       # Check for deadend...
       my @new = newpos( @now, $move );
@@ -213,6 +212,7 @@ sub midrange {
       #warn "Deadendscore: $isdeadend\n";
       $score = 0.5 if $isdeadend;
     }
+    # Anything longer than 6 moves is considered out of mid range
     $result[$move] = $score > 5 ? 5 : $score;
   }
 
@@ -340,7 +340,7 @@ sub closecombat {
     {}, $maxdepth, $move
   );
 
-  #warn "Closecombat for move $move: $score\n";
+  warn "Closecombat for move $move: $score\n";
   return $score;
 }
 
