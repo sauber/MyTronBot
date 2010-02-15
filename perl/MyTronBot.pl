@@ -1,7 +1,14 @@
-# perl Random Bot for Tron
+########################################################################
+###
+### Tron Bot for Google AI Challenge
+### (c) Soren Dossing, 2010
+###
+########################################################################
 
 # module containing Tron library functions
 use Tron;
+use warnings;
+use strict;
 
 #global variable storing the current state of the map
 my $_map = new Map();
@@ -12,36 +19,57 @@ my $_map = new Map();
 #   3. Calls Tron::MakeMove on the move to pass it to the game engine
 while (1) {
   $_map->ReadFromFile();
-  $move = chooseMove();
+  my $move = chooseMove();
   Tron::MakeMove($move);
 }
 
-# Basic directions
+########################################################################
+###
+### Program Description
+###
+########################################################################
+
+# This program is designed to have several similar strategy methods
+# that calculates comparable scores for a set of directions.
+#
+# All methods share same input/output API:
+#   Input: A full list or sub-list of all possible directions to consider.
+#   Output: Score for all directions. Higher is better.
+#
+# A strategy should calculate scores only for directions requested.
+#
+# Example:
+#
+#   # Strategy: Go north
+#   #
+#   sub gonorth {
+#     my @dir = @_;
+#
+#     my @result = (0, 0, 0, 0);
+#     for my $move ( @dir ) {
+#       $result[$move] = 1 if $move == 0;
+#     }
+#     return @result;
+#   }
+#
+# These are the possible directions:
 #
 # 0 = North
 # 1 = East
 # 2 = South
 # 3 = West
-
-# Directions next to straight ahead
 #
-#       WNE
-#       012
-#       ^^^
-#       |||
-#  N11<-   ->3N
-#  W10<- * ->4E
-#  S 9<-   ->5S
-#       |||
-#       vvv
-#       876
-#       WSE
+# Strategies belong to a range. The ranges are:
+#    Immediate: Move has to be done now
+#   Near range: Up to 3 moves ahead
+#    Mid range: Up to 6 moves ahead
+#   Long range: 7 or more moves ahead
 
-# Ranges:
-#   Immediate: This Move
-#   Near range: 3
-#   Mid range: 6
-#   Far range: > 6
+########################################################################
+###
+### Generic Map Navigation Methods
+###
+########################################################################
 
 # Given a position and a move, calculate new position
 #
@@ -56,42 +84,53 @@ sub newpos {
   return @new;
 }
 
-# Calculate distance to wall in a given direction
+# Identify the walls around a position
 #
-sub distancetowall_old {
-  my $move = shift;
+sub walls {
+  my ( $x, $y ) = @_;
 
-  my $count = 1;
-  $x = $_map->{myPos}->[0];
-  $y = $_map->{myPos}->[1];
-  if ( $move == 0 or $move == 8 ) {
-    $x--;
-    return 0 if $_map->IsWall( $x, $y );
+  my @result;
+  for my $move ( 0 .. 3 ) {
+    my @new = newpos( $x, $y, $move );
+    push @result, $move if $_map->IsWall(@new);
   }
-  if ( $move == 2 or $move == 6 ) {
-    $x++;
-    return 0 if $_map->IsWall( $x, $y );
-  }
-  if ( $move == 3 or $move == 11 ) {
-    $y--;
-    return 0 if $_map->IsWall( $x, $y );
-  }
-  if ( $move == 5 or $move == 9 ) {
-    $y++;
-    return 0 if $_map->IsWall( $x, $y );
+  return @result;
+}
+
+# Can opponent reach this position in one move?
+#
+sub opponentcanreach {
+  my ( $x, $y ) = @_;
+
+  my @opponent = @{ $_map->{opponentPos} };
+  my $canreach = 0;
+  for my $move ( 0 .. 3 ) {
+    my @new = newpos( @opponent, $move );
+
+    #warn "Opponent could move to @new and I would be at $x,$y\n";
+    if ( $new[0] == $x and $new[1] == $y ) {
+
+      #warn "  Opponent can reach\n";
+      $canreach = 1;
+      last;
+    }
   }
 
-  #warn "Move $move offset is successful to $x, $y\n"; # XXX: debug
-  if ( $move >= 0 and $move <= 2 ) {
-    while ( !$_map->IsWall( $x, $y - $count ) ) { ++$count }
-  } elsif ( $move >= 3 and $move <= 5 ) {
-    while ( !$_map->IsWall( $x + $count, $y ) ) { ++$count }
-  } elsif ( $move >= 6 and $move <= 8 ) {
-    while ( !$_map->IsWall( $x, $y + $count ) ) { ++$count }
-  } elsif ( $move >= 9 ) {
-    while ( !$_map->IsWall( $x - $count, $y ) ) { ++$count }
+  #warn "  Opponent cannot reach\n" unless $canreach;
+  return $canreach;
+}
+
+# In a given direction, how many moves until hitting wall?
+#
+sub distancetowall {
+  my ( $x, $y, $move ) = @_;
+
+  my $count = 0;
+  my @new = ( $x, $y );
+  while ( @new = newpos( @new, $move ) and !$_map->IsWall(@new) ) {
+    ++$count;
   }
-  return --$count;
+  return $count;
 }
 
 ########################################################################
@@ -101,7 +140,7 @@ sub distancetowall_old {
 ########################################################################
 
 # Long range strategies
-#   1) Try to get outside of opponent
+#   1) Try framing opponent by getting outside
 #
 sub longrange {
   my @dir = @_;
@@ -138,21 +177,47 @@ sub longrange {
 
 ########################################################################
 ###
-### Midrange Strategies
+### Mid Range Strategies
 ###
 ########################################################################
 
-# In a given direction, how many moves until hitting wall?
+# Midrange strategies: Escape
+#   1) Stay as far away from directly ahead walls as possible
+#   2) Creep around walls if possible
+#   3) Don't go into deadends
 #
-sub distancetowall {
-  my ( $x, $y, $move ) = @_;
+sub midrange {
+  my @dir = @_;
 
-  my $count = 0;
-  my @new = ( $x, $y );
-  while ( @new = newpos( @new, $move ) and !$_map->IsWall(@new) ) {
-    ++$count;
+  my @result = ( 0, 0, 0, 0 );
+  my @now = @{ $_map->{myPos} };
+  for my $move (@dir) {
+
+    #my $topscore = 0;
+    my $score = distancetowall( @now, $move );
+
+    #warn "Distancescore: $score\n";
+    if ( $score >= 2 ) {
+      my $creepscore = creeparound( @now, $move );
+
+      #warn "Creepscore: $creepscore\n";
+      # XXX: Wrong!. It should be 1+$creepscore if higher than current $score.
+      $score += $creepscore;
+
+      # Check for deadend...
+      my @new = newpos( @now, $move );
+
+      #warn "Starting deadend trace from @now to @new move $move\n";
+      my $isdeadend = tracedeadend( @now, newpos( @now, $move ) );
+
+      #warn "Deadendscore: $isdeadend\n";
+      $score = 0.5 if $isdeadend;
+    }
+    $result[$move] = $score > 5 ? 5 : $score;
   }
-  return $count;
+
+  #warn "midrange: @result\n";
+  return @result;
 }
 
 # How far can we go if we take one step to the side?
@@ -173,19 +238,6 @@ sub creeparound {
   }
   return $count;
 }
-
-# Count number of walls my moving to new position
-#
-#sub tracenumwall {
-#  my($oldx,$oldy,$newx,$newy) = @_;
-#
-#  #for my $dir ( 0..3 ) {
-#  #  @nextpos = newpos( @new, $dir );
-#  #  # Is there a wall?
-#  #  ++$numwalls if $_map->IsWall( @nextpos );
-#  my $numwalls = 0;
-#
-#}
 
 # If entering a position only has one next move, keep checking until
 # there are at least two moves possible again.
@@ -227,50 +279,72 @@ sub tracedeadend {
   #return 2;
 }
 
-# Midrange strategies: Escape
-#   1) Stay as far away from directly ahead walls as possible
-#   2) Creep around walls if possible
-#   3) Don't go into deadends
+########################################################################
+###
+### Near Range Strategy
+###
+########################################################################
+
+# Engage in close combat if opponent is nearby.
+# Otherwise no strategy.
 #
-sub midrange {
+sub nearrange {
   my @dir = @_;
 
-  my @results = ( 0, 0, 0, 0 );
-  my @now = @{ $_map->{myPos} };
+  my @result = ( 0, 0, 0, 0 );
+  my $maxdistance = 3;
   for my $move (@dir) {
 
-    #my $topscore = 0;
-    my $score = distancetowall( @now, $move );
+    #warn "nearrange check move $move of @dir current result @result\n";
+    my $deltax = abs( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] );
+    my $deltay = abs( $_map->{myPos}->[1] - $_map->{opponentPos}->[1] );
+    if ( $deltax <= $maxdistance and $deltay <= $maxdistance ) {
 
-    #warn "Distancescore: $score\n";
-    if ( $score >= 2 ) {
-      my $creepscore = creeparound( @now, $move );
+      #$result[$move] = closecombat($move);
+      # XXX: For now just try stay close to opponent
+      $result[$move] = 2;
+    } else {
 
-      #warn "Creepscore: $creepscore\n";
-      $score += $creepscore;
-
-      # Check for deadend...
-      my @new = newpos( @now, $move );
-
-      #warn "Starting deadend trace from @now to @new move $move\n";
-      my $isdeadend = tracedeadend( @now, newpos( @now, $move ) );
-
-      #warn "Deadendscore: $isdeadend\n";
-      $score = 0.5 if $isdeadend;
+      # Too far apart for close combat. But a valid move nevertheless.
+      $result[$move] = 1;
     }
-    $results[$move] = $score > 5 ? 5 : $score;
   }
 
-  #warn "midrange: @results\n";
-  return @results;
+  #warn "nearrange: @result\n";
+  return @result;
 }
 
-########################################################################
-###
-### Closed Combat
-###
-########################################################################
+# Close combat.
+# When bots are in close proximity, examine all possibilities.
+# Calculate overall score for all required direction.
+#
+sub closecombat {
 
+  #my @dir = @_;
+  my $move = shift;
+
+  # Origin: Position in middle of me an opponent
+  my $midx =
+    $_map->{opponentPos}->[0] +
+    ( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] ) / 2;
+  my $midy =
+    $_map->{opponentPos}->[0] +
+    ( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] ) / 2;
+
+  my @result   = ( 0, 0, 0, 0 );
+  my $maxdepth = 3;                # Don't care what happens after 4 moves
+  my $score    = closemoves(
+    $midx, $midy,
+    @{ $_map->{myPos} },
+    @{ $_map->{opponentPos} },
+    {}, $maxdepth, $move
+  );
+
+  #warn "Closecombat for move $move: $score\n";
+  return $score;
+}
+
+# The rules for close combat.
 # Given two player positions, the original map, and map modifications
 # What are the possible next moves by both players.
 # Discard going into walls, and discard going to same position.
@@ -283,11 +357,18 @@ sub midrange {
 #   5) Players too far away from original location: 0
 #   6) Players can only collide: -900 (TODO)
 #   7) Number of possible moves until one of the other conditions
+# XXX: TODO:
+#   Don't give score for something we don't care about
+#   If we can win, stop checking
+#   Do testing early. Recursive as late as possible.
+#   Only check possible moves once.
+#   Do as much as possible before recursing
 #
 sub closemoves {
   my ( $origx, $origy, $x1, $y1, $x2, $y2, $map, $depth, $firstmove ) = @_;
 
-  return -1 if $depth > 3;
+  return -1
+    if --$depth <= 0;    # Save the subroutine call and check one level up
   my $maxdistance = 3;
   my $score       = 1;
   my $playeronecanmove;
@@ -340,7 +421,7 @@ sub closemoves {
 
         # Recursive check all possible next moves
         my $newmap =
-          { %map, "$mynew[0],$mynew[1]" => 1, "$hisnew[0],$hisnew[1]" => 1 };
+          { %$map, "$mynew[0],$mynew[1]" => 1, "$hisnew[0],$hisnew[1]" => 1 };
         $score +=
           closemoves( $origx, $origy, @mynew, @hisnew, $newmap, 1 + $depth );
       }
@@ -352,150 +433,72 @@ sub closemoves {
 
   #return $score if   $playeronecanmove and   $playertwocanmove;
   $score = -900 if $nummoves == 1;
-  $debug = " " x $depth;
+  my $debug = " " x $depth;
   $debug .= "score $score, orig($origx,$origy) my($x1,$y1) him($x2,$y2)";
-  warn "$debug\n";
+
+  #warn "$debug\n";
   return $score;
 }
 
-# Close combat
-# When bots are in close proximity, use quantum computing to find best solution
-# Need to return the score for any given direction
-#
-sub closecombat {
-  my @dir = @_;
-
-  my @results = ( 0, 0, 0, 0 );
-  my $midx =
-    $_map->{opponentPos}->[0] +
-    ( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] ) / 2;
-  my $midy =
-    $_map->{opponentPos}->[0] +
-    ( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] ) / 2;
-  for my $move (@dir) {
-    $results[$move] = closemoves(
-      $midx, $midy,
-      @{ $_map->{myPos} },
-      @{ $_map->{opponentPos} },
-      {}, 0, $move
-    );
-  }
-  warn "Closecombat: @results\n";
-  return @results;
-}
-
 ########################################################################
 ###
-### Near Strategies
+### Immediate strategy
 ###
 ########################################################################
 
-# Is there a wall in this direction from my current position?
-#
-sub iswall {
-  my $move = shift;
-
-  my $haswall = 0;
-  my @old     = @{ $_map->{myPos} };
-  my @new     = newpos( @old, $move );
-
-  #warn "Old @old to $move ends at @new\n";
-  $haswall = 1 if $_map->IsWall(@new);
-
-  #warn "Wall from @old direction $move: $haswall\n"; # XXX: debug
-  return $haswall;
-}
-
-# Can opponent reach this position
-#
-sub opponentcanreach {
-
-  #my($x, $y) = @_;
-  my $move = shift;
-
-  my @opponent = @{ $_map->{opponentPos} };
-  my ( $x, $y ) = newpos( @{ $_map->{myPos} }, $move );
-  my $canreach = 0;
-  for my $move ( 0 .. 3 ) {
-    my @new = newpos( @opponent, $move );
-
-    #warn "Opponent could move to @new and I would be at $x,$y\n";
-    if ( $new[0] == $x and $new[1] == $y ) {
-
-      #warn "Opponent can reach\n";
-      $canreach = 1;
-      last;
-    }
-  }
-
-  #warn "Opponent cannot reach\n" unless $canreach;
-  return $canreach;
-}
-
-# Is move to a dead end?
-#
-sub deadend {
-  my $move = shift;
-
-  my @opponent = @{ $_map->{opponentPos} };
-  my @old      = @{ $_map->{myPos} };
-  my @new      = newpos( @old, $move );
-  $numwalls = 0;
-  for my $dir ( 0 .. 3 ) {
-    @nextpos = newpos( @new, $dir );
-
-    # Is there a wall?
-    ++$numwalls if $_map->IsWall(@nextpos);
-
-    # Is there also the opponent? Not sure if we should check this.
-    ++$numwalls
-      if @nextpos[0] == @opponent[0]
-        and @nextpos[1] == @opponent[1];
-  }
-
-  #warn "@new has $numwalls walls\n";
-  return 1 if $numwalls >= 4;
-  return 0;
-}
-
-# Near Strategy: Survive
+# Immediate Strategy: Don't loose
 #   1) Don't hit wall
-#   2) Don't move to field that opponent might also go to
-#   3) XXX TODO: Checkmate
-#   4) Avoid immediate deadends
+#   2) Avoid immediate deadends
+#   3) Don't move to field that opponent might also go to
 #
-sub nearrange {
+sub immediate {
   my @dir = @_;
 
-  my @results = ( 1, 1, 1, 1 );
+  my @result = ( 0, 0, 0, 0 );
   for my $move (@dir) {
 
-    #warn "Near: Checking what's in direction $move\n";
-    if ( iswall($move) ) {
+    my @new = newpos( @{ $_map->{myPos} }, $move );
 
-      #warn "Near: There is a wall!\n";
-      $results[$move] = 0;
-    } elsif ( deadend($move) ) {
+    #warn "Immediate: Checking what's in direction $move\n";
+    if ( $_map->IsWall(@new) ) {
 
-      #warn "Near: It's a deadend!\n";
-      $results[$move] = 0.5;
-    } elsif ( opponentcanreach($move) ) {
+      # Don't go into a wall. It's a sure way to loose.
+      #warn "Immediate: There is a wall!\n";
+      $result[$move] = 0;
+    } elsif ( 4 == walls(@new) ) {
 
-      #warn "Near: Opponent can reach!\n";
-      $results[$move] = 0.66;
+      # Avoid going into a dead end. It will make you loose at next move.
+      # There is a chance that opponent will die at this move, but it's small.
+      #warn "Immediate: It's a deadend!\n";
+      $result[$move] = 0.5;
+    } elsif ( opponentcanreach(@new) ) {
+
+      # Risking a draw is better than deadends and walls
+
+      #warn "Immediate: Opponent can reach!\n";
+      $result[$move] = 0.66;    #
     } else {
 
-      #warn "Near: Clear!\n";
-      $results[$move] = 1;
+      # Nothing immediately in the way for going to this spot.
+      #warn "Immediate: Clear!\n";
+      $result[$move] = 1;
     }
   }
 
-  #warn "near: @results\n";
-  return @results;
+  #warn "Immediate: @result\n";
+  return @result;
 }
 
-# Only keep the highest score direction.
-# If more than one has same high score, keep all with the same score
+########################################################################
+###
+### Move
+###
+########################################################################
+
+# Compare scores for each direction.
+# Only keep the direction with the highest score.
+# If more than one direction has same high score, keep all those directions.
+# Discard directions not having highest score.
 #
 sub choosedirections {
   my @dirscore = @_;
@@ -504,67 +507,30 @@ sub choosedirections {
   my $pos = 0;
   my $max;
   my @keep =
-    map $_->[0], grep { $_->[1] == $max }
-    map { $max ||= $_->[1]; $_ }
-    sort { $b->[1] <=> $a->[1] }
-    map { [ $pos++, $_ ] } @dirscore;
+    map $_->[0], grep { $_->[1] == $max }    # Keep all equal to highest score
+    map { $max ||= $_->[1]; $_ }             # First one is higest score
+    sort { $b->[1] <=> $a->[1] }             # Sort by score
+    map { [ $pos++, $_ ] } @dirscore;        # Associate direction with score
 
-  #my @keep = shift @dir;
-  #for my $move ( @dir ) {
-  #  if ( $move == $keep[0] ) {
-  #    push @keep, $move;
-  #  } else {
-  #    last;
-  #  }
-  #}
   #warn "Choosedirections: @keep\n";
   return @keep;
 }
 
-# Find longest distance in all four directions
-#
-sub chooseMove_old {
-
-  # Try out close combat for each move
-  #closecombat(0, 1, 2, 3);
-  my $move    = 0;
-  my $longest = 0;
-  for my $dir ( 0 .. 11 ) {
-    my $distance = distancetowall($dir);
-
-    #warn "Direction $dir distance $distance\n"; # XXX: debug
-    if ( $distance >= $longest ) {
-      $move    = $dir;
-      $longest = $distance;
-    }
-  }
-
-  #return 1+$move;
-  my $result = 1;
-
-  #$result = 1 if $move == 1 or $move == 3 or $ move == 11;
-  $result = 2 if $move == 2 or $move == 4 or $move == 6;
-  $result = 3 if $move == 5 or $move == 7 or $move == 9;
-  $result = 4 if $move == 0 or $move == 8 or $move == 10;
-
-  #warn "Best is direction $move, return $result\n";
-  return $result;
-}
-
-# Check near, mid and long term strategies
-# Follow whichever makes a decision first
+# Check immediate, near, mid and long term strategies.
+# Follow whichever makes a decision first.
 #
 sub chooseMove {
 
   #warn "=== Startpos: @{ $_map->{myPos} }\n";
   my @dir = ( 0, 1, 2, 3 );    # Initial directions. Anything is possible.
-  @dir = choosedirections( nearrange(@dir) );
-
-  #my $bestmove = shift @dir;
+  @dir = choosedirections( immediate(@dir) );
   if ( @dir > 1 ) {
-    @dir = choosedirections( midrange(@dir) );
+    @dir = choosedirections( nearrange(@dir) );
     if ( @dir > 1 ) {
-      @dir = choosedirections( longrange(@dir) );
+      @dir = choosedirections( midrange(@dir) );
+      if ( @dir > 1 ) {
+        @dir = choosedirections( longrange(@dir) );
+      }
     }
   }
   my $bestmove = shift @dir;
