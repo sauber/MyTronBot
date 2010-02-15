@@ -7,8 +7,6 @@
 
 # module containing Tron library functions
 use Tron;
-use warnings;
-use strict;
 
 #global variable storing the current state of the map
 my $_map = new Map();
