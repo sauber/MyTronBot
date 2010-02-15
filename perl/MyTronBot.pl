@@ -287,6 +287,7 @@ sub tracedeadend {
 
 # Engage in close combat if opponent is nearby.
 # Otherwise no strategy.
+# XXX: Deadend entrance check belongs here
 #
 sub nearrange {
   my @dir = @_;
@@ -543,15 +544,15 @@ sub chooseMove {
   #warn "=== Startpos: @{ $_map->{myPos} }\n";
   my @dir = ( 0, 1, 2, 3 );    # Initial directions. Anything is possible.
   @dir = choosedirections( immediate(@dir) );
-  if ( @dir > 1 ) {
-    @dir = choosedirections( nearrange(@dir) );
-    if ( @dir > 1 ) {
-      @dir = choosedirections( midrange(@dir) );
-      if ( @dir > 1 ) {
-        @dir = choosedirections( longrange(@dir) );
-      }
-    }
-  }
+  #if ( @dir > 1 ) {
+  #  @dir = choosedirections( nearrange(@dir) );
+  #  if ( @dir > 1 ) {
+  #    @dir = choosedirections( midrange(@dir) );
+  #    if ( @dir > 1 ) {
+  #      @dir = choosedirections( longrange(@dir) );
+  #    }
+  #  }
+  #}
   my $bestmove = shift @dir;
 
   #warn "Best direction: $bestmove\n";
