@@ -11,6 +11,7 @@ use Time::HiRes qw(gettimeofday tv_interval);
 
 #global variable storing the current state of the map
 my $_map = new Map();
+my $t0;
 
 #Main loop
 #   1. Reads in the board and calls chooseMove to pick a random move
@@ -18,6 +19,7 @@ my $_map = new Map();
 #   3. Calls Tron::MakeMove on the move to pass it to the game engine
 while (1) {
   $_map->ReadFromFile();
+  $t0 = [gettimeofday()];
   my $move = chooseMove();
   Tron::MakeMove($move);
 }
@@ -63,6 +65,42 @@ while (1) {
 #   Near range: Up to 3 moves ahead
 #    Mid range: Up to 6 moves ahead
 #   Long range: 7 or more moves ahead
+
+########################################################################
+###
+### Debugging
+###
+########################################################################
+
+# Display the map, possibly with override data
+#
+sub rendermap {
+  my(%override) = @_;
+
+  my($x,$y);
+  my @line;
+  # Original walls
+  for $y ( 0 .. $_map->{height} ) {
+    for $x ( 0 .. $_map->{width} ) {
+      $line[$y] .= $_map->IsWall($x,$y) ? '#' : ' ' ;
+    }
+  }
+  # Additional walls
+  for my $walls ( keys %{ $override{map} } ) {
+    ($x,$y) = split /,/, $walls;
+    substr($line[$y],$x,1) ='#';
+  }
+  # Player positions
+  $x = $override{opponentPos}[0] || $_map->{opponentPos}[0];
+  $y = $override{opponentPos}[1] || $_map->{opponentPos}[1];
+  substr($line[$y],$x,1) ='2';
+  $x = $override{myPos}[0] || $_map->{myPos}[0];
+  $y = $override{myPos}[1] || $_map->{myPos}[1];
+  substr($line[$y],$x,1) ='1';
+
+  my $r = join "\n", @line;
+  return $r;
+}
 
 ########################################################################
 ###
@@ -167,7 +205,8 @@ sub longrange {
     my @new      = newpos( @now, $move );
     my $deltax   = abs( $new[0] - $myx );
     my $deltay   = abs( $new[1] - $myy );
-    my $distance = sqrt( $deltax**2 + $deltay**2 );
+    next if $deltax == 0 and $deltay == 0;
+    my $distance = $deltax + $deltay;
     $result[$move] = 100 / $distance;
   }
 
@@ -203,14 +242,6 @@ sub midrange {
       #warn "Creepscore: $creepscore\n";
       $score = $creepscore if $creepscore > $score;
 
-      # Check for deadend...
-      #my @new = newpos( @now, $move );
-
-      #warn "Starting deadend trace from @now to @new move $move\n";
-      #my $isdeadend = tracedeadend( @now, newpos( @now, $move ) );
-
-      #warn "Deadendscore: $isdeadend\n";
-      #$score = 0.5 if $isdeadend;
     }
     # Anything longer than 6 moves is considered out of mid range
     $result[$move] = $score > 5 ? 5 : $score;
@@ -246,9 +277,8 @@ sub creeparound {
 ###
 ########################################################################
 
+# Deadend entrance check.
 # Engage in close combat if opponent is nearby.
-# Otherwise no strategy.
-# XXX: Deadend entrance check belongs here
 #
 sub nearrange {
   my @dir = @_;
@@ -257,20 +287,6 @@ sub nearrange {
   my $maxdistance = 3;
   for my $move (@dir) {
 
-    #warn "nearrange check move $move of @dir current result @result\n";
-    #my $deltax = abs( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] );
-    #my $deltay = abs( $_map->{myPos}->[1] - $_map->{opponentPos}->[1] );
-    #if ( $deltax <= $maxdistance and $deltay <= $maxdistance ) {
-    #
-    #  $result[$move] = closecombat($move);
-    #  # XXX: For now just try stay close to opponent
-    #  #$result[$move] = 2;
-    #  #} else {
-    #
-    #  # Too far apart for close combat. But a valid move nevertheless.
-    #  $result[$move] = 1;
-    #}
-
     # Check for deadend...
     my @now = @{ $_map->{myPos} };
     my @new = newpos( @now, $move );
@@ -278,13 +294,25 @@ sub nearrange {
     #warn "Starting deadend trace from @now to @new move $move\n";
     my $isdeadend = tracedeadend( @now, newpos( @now, $move ) );
 
-    #warn "Deadendscore: $isdeadend\n";
     if ( $isdeadend ) {
-      my $score = 0.5;
+      #warn "Deadendscore move $move: $isdeadend\n";
+      my $score = $isdeadend -100; # Longer deadend is better than shorter
       $result[$move] = $score;
-    } else {
-      $result[$move] = 1;
+      next;
     }
+
+    #warn "nearrange check move $move of @dir current result @result\n";
+    my $deltax = abs( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] );
+    my $deltay = abs( $_map->{myPos}->[1] - $_map->{opponentPos}->[1] );
+    if ( $deltax <= $maxdistance and $deltay <= $maxdistance ) {
+      my $score = closecombat($move);
+      #warn "Closecombat move $move score $score\n";
+      $result[$move] = $score;
+      next;
+    }
+
+    # Default is that the move is valid
+    $result[$move] = 1;
   }
 
   #warn "nearrange: @result\n";
@@ -319,7 +347,10 @@ sub tracedeadend {
   #warn "Deadend numwalls: $numwalls\n";
   return 1 if $numwalls >= 3;    # No exit. This is a deadend.
   return 0 if $numwalls <= 1;    # Multiple ways. It's not a deadend.
-  return tracedeadend( $newx, $newy, @gonext ); # Keep tracing
+  my $deadend = tracedeadend( $newx, $newy, @gonext ); # Keep tracing
+  ++$deadend if $deadend > 0; # Depth of deadend
+  return $deadend;
+ 
 
   #return 2;
 }
@@ -340,8 +371,8 @@ sub closecombat {
     ( $_map->{myPos}->[1] - $_map->{opponentPos}->[1] ) / 2;
 
   my @result   = ( 0, 0, 0, 0 );
-  my $maxdepth = 3;                # Don't care what happens after 4 moves
-  my $score    = 1 + closemoves(
+  my $maxdepth = 5;                # Don't care what happens after 4 moves
+  my $score    = 0 + closemoves(
     $midx, $midy,
     @{ $_map->{myPos} },
     @{ $_map->{opponentPos} },
@@ -449,10 +480,17 @@ sub closemoves {
   --$depth;
   return 0 if $depth <= 0; # It's undecided
 
+  # XXX: Are we out of time?
+  if ( tv_interval ( $t0 ) > 0.5 ) {
+    #warn "Timeout at level $depth\n";
+    return 0;
+  }
+
   # Check all possible combinations of valid moves
+  my @movescore;
   for my $mymove ( @mydir ) {
     my @mynew = newpos( $x1, $y1, $mymove );
-
+    my $averagescore;
     for my $hismove ( @hisdir ) {
       my @hisnew = newpos( $x2, $y2, $hismove );
   
@@ -462,10 +500,15 @@ sub closemoves {
       my $score =
         closemoves( $origx, $origy, @mynew, @hisnew, $newmap, $depth );
         #warn "  $depth $score @mynew, @hisnew\n";
-      return $score if $score == -1000 or $score == 1000;
+      #return $score if $score == -1000 or $score == 1000;
+      $averagescore += $score / scalar(@hisdir);
     }
   }
-  return 1;
+
+  # I cannot make sure what he will do since most bots are stupid,
+  # but I hope I will choose what best for me.
+  @movescore = reverse sort @movescore;
+  return shift @movescore;
 }
 
 ########################################################################
@@ -548,23 +591,22 @@ sub choosedirections {
 # Follow whichever makes a decision first.
 #
 sub chooseMove {
-  my $t0 = [gettimeofday()];
 
   #warn "=== Startpos: @{ $_map->{myPos} }\n";
   my @dir = ( 0, 1, 2, 3 );    # Initial directions. Anything is possible.
   @dir = choosedirections( immediate(@dir) );
-  if ( @dir > 1 ) {
+  if ( @dir > 1 and tv_interval ( $t0 ) < 0.5 ) {
     @dir = choosedirections( nearrange(@dir) );
-  #  if ( @dir > 1 ) {
-  #    @dir = choosedirections( midrange(@dir) );
-  #    if ( @dir > 1 ) {
-  #      @dir = choosedirections( longrange(@dir) );
-  #    }
-  #  }
+    if ( @dir > 1 and tv_interval ( $t0 ) < 0.5 ) {
+      @dir = choosedirections( midrange(@dir) );
+      if ( @dir > 1 and tv_interval ( $t0 ) < 0.5 ) {
+        @dir = choosedirections( longrange(@dir) );
+      }
+    }
   }
   my $bestmove = shift @dir;
 
   #warn "Best direction: $bestmove\n";
-  #warn sprintf "Time spent: %s\n, ", tv_interval ( $t0 );
+  #warn sprintf "Time spent: %s\n", tv_interval ( $t0 );
   return ++$bestmove;
 }
