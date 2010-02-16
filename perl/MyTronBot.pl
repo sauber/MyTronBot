@@ -204,13 +204,13 @@ sub midrange {
       $score = $creepscore if $creepscore > $score;
 
       # Check for deadend...
-      my @new = newpos( @now, $move );
+      #my @new = newpos( @now, $move );
 
       #warn "Starting deadend trace from @now to @new move $move\n";
-      my $isdeadend = tracedeadend( @now, newpos( @now, $move ) );
+      #my $isdeadend = tracedeadend( @now, newpos( @now, $move ) );
 
       #warn "Deadendscore: $isdeadend\n";
-      $score = 0.5 if $isdeadend;
+      #$score = 0.5 if $isdeadend;
     }
     # Anything longer than 6 moves is considered out of mid range
     $result[$move] = $score > 5 ? 5 : $score;
@@ -239,19 +239,64 @@ sub creeparound {
   return $count;
 }
 
+
+########################################################################
+###
+### Near Range Strategy
+###
+########################################################################
+
+# Engage in close combat if opponent is nearby.
+# Otherwise no strategy.
+# XXX: Deadend entrance check belongs here
+#
+sub nearrange {
+  my @dir = @_;
+
+  my @result = ( 0, 0, 0, 0 );
+  my $maxdistance = 3;
+  for my $move (@dir) {
+
+    #warn "nearrange check move $move of @dir current result @result\n";
+    #my $deltax = abs( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] );
+    #my $deltay = abs( $_map->{myPos}->[1] - $_map->{opponentPos}->[1] );
+    #if ( $deltax <= $maxdistance and $deltay <= $maxdistance ) {
+    #
+    #  $result[$move] = closecombat($move);
+    #  # XXX: For now just try stay close to opponent
+    #  #$result[$move] = 2;
+    #  #} else {
+    #
+    #  # Too far apart for close combat. But a valid move nevertheless.
+    #  $result[$move] = 1;
+    #}
+
+    # Check for deadend...
+    my @now = @{ $_map->{myPos} };
+    my @new = newpos( @now, $move );
+
+    #warn "Starting deadend trace from @now to @new move $move\n";
+    my $isdeadend = tracedeadend( @now, newpos( @now, $move ) );
+
+    #warn "Deadendscore: $isdeadend\n";
+    if ( $isdeadend ) {
+      my $score = 0.5;
+      $result[$move] = $score;
+    } else {
+      $result[$move] = 1;
+    }
+  }
+
+  #warn "nearrange: @result\n";
+  return @result;
+}
+
 # If entering a position only has one next move, keep checking until
 # there are at least two moves possible again.
 # Otherwise it's a deadend.
 #
 sub tracedeadend {
   my ( $oldx, $oldy, $newx, $newy ) = @_;
-
-  #my @old = ($x,$y);
-  #my @new = newpos($x,$y,$move);
-  #while ( numwall >=3 ) {
-  #  if 4 then deadend and return
-  #}
-  #not deadend
 
   #warn "Deadend wall count moving from $oldx,$oldy to $newx,$newy\n";
   my $numwalls = 0;
@@ -274,45 +319,9 @@ sub tracedeadend {
   #warn "Deadend numwalls: $numwalls\n";
   return 1 if $numwalls >= 3;    # No exit. This is a deadend.
   return 0 if $numwalls <= 1;    # Multiple ways. It's not a deadend.
-  return tracedeadend( $newx, $newy, @gonext );
+  return tracedeadend( $newx, $newy, @gonext ); # Keep tracing
 
   #return 2;
-}
-
-########################################################################
-###
-### Near Range Strategy
-###
-########################################################################
-
-# Engage in close combat if opponent is nearby.
-# Otherwise no strategy.
-# XXX: Deadend entrance check belongs here
-#
-sub nearrange {
-  my @dir = @_;
-
-  my @result = ( 0, 0, 0, 0 );
-  my $maxdistance = 3;
-  for my $move (@dir) {
-
-    #warn "nearrange check move $move of @dir current result @result\n";
-    my $deltax = abs( $_map->{myPos}->[0] - $_map->{opponentPos}->[0] );
-    my $deltay = abs( $_map->{myPos}->[1] - $_map->{opponentPos}->[1] );
-    if ( $deltax <= $maxdistance and $deltay <= $maxdistance ) {
-
-      $result[$move] = closecombat($move);
-      # XXX: For now just try stay close to opponent
-      #$result[$move] = 2;
-    } else {
-
-      # Too far apart for close combat. But a valid move nevertheless.
-      $result[$move] = 1;
-    }
-  }
-
-  #warn "nearrange: @result\n";
-  return @result;
 }
 
 # Close combat.
@@ -492,7 +501,7 @@ sub immediate {
       $result[$move] = 0.5;
     } elsif ( opponentcanreach(@new) ) {
 
-      # Risking a draw is better than deadends and walls
+      # Risking a draw is better than immediate deadends and walls
 
       #warn "Immediate: Opponent can reach!\n";
       $result[$move] = 0.66;    #
@@ -544,15 +553,15 @@ sub chooseMove {
   #warn "=== Startpos: @{ $_map->{myPos} }\n";
   my @dir = ( 0, 1, 2, 3 );    # Initial directions. Anything is possible.
   @dir = choosedirections( immediate(@dir) );
-  #if ( @dir > 1 ) {
-  #  @dir = choosedirections( nearrange(@dir) );
+  if ( @dir > 1 ) {
+    @dir = choosedirections( nearrange(@dir) );
   #  if ( @dir > 1 ) {
   #    @dir = choosedirections( midrange(@dir) );
   #    if ( @dir > 1 ) {
   #      @dir = choosedirections( longrange(@dir) );
   #    }
   #  }
-  #}
+  }
   my $bestmove = shift @dir;
 
   #warn "Best direction: $bestmove\n";
