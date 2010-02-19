@@ -7,13 +7,14 @@
 
 # module containing Tron library functions
 use Tron;
-#use Move;
+use Move;
 use Time::HiRes qw(gettimeofday tv_interval);
 
 #global variable storing the current state of the map
 my $_map = new Map();
 my $t0;
 my $movecount;
+my $tree;
 
 #Main loop
 #   1. Reads in the board and calls chooseMove to pick a random move
@@ -518,6 +519,54 @@ sub closemoves {
   return $bestmoves[0];
 }
 
+# Find best next move
+sub newclosecombat {
+  my @dir = @_;
+
+  if ( $tree ) {
+    # We are alredy into game
+    warn sprintf "Tree size before: %s\n", $tree->treesize();
+    $tree = $tree->branch();
+    warn sprintf "Tree size after : %s\n", $tree->treesize();
+  } else {
+    # Game started
+    # XXX: origx/y should no longer be needed
+    $tree = new Move(
+      origx => 0,
+      origy => 0,
+      x1 => $_map->{myPos}[0],
+      y1 => $_map->{myPos}[1],
+      x2 => $_map->{opponentPos}[0],
+      y2 => $_map->{opponentPos}[1],
+      'map' => {},
+      _map => $_map,
+      depth => 0,
+    );
+    #use Data::Dumper;
+    #warn Dumper $tree;
+  }
+  #$tree = $tree->branch();
+  #use Data::Dumper;
+  #warn Dumper $tree;
+  my $iterations;
+  #$tree->improvescore();
+  #$tree->improvescore();
+  #$tree->improvescore();
+  #$tree->improvescore();
+  ++$iterations while $tree->improvescore() and tv_interval ( $t0 ) < 0.4;
+  warn "Did $iterations iterations\n";
+  #warn Dumper $tree;
+  warn sprintf "Tree size after : %s\n", $tree->treesize();
+  #getscoreforeach @dir;
+  #return bestscore;
+  #my @result = (0, 0, 0, 0);
+  #for my $move ( @dir ) {
+  #  $result[$move] = $tree->{score}{$_} || 0;
+  #};
+  #return @result;
+  $tree->bestmove();
+}
+
 ########################################################################
 ###
 ### Immediate strategy
@@ -601,21 +650,22 @@ sub chooseMove {
 
   #warn "=== Startpos: @{ $_map->{myPos} }\n";
   my @dir = ( 0, 1, 2, 3 );    # Initial directions. Anything is possible.
-  @dir = choosedirections( immediate(@dir) );
-  if ( @dir > 1 and tv_interval ( $t0 ) < 0.5 ) {
-    @dir = choosedirections( nearrange(@dir) );
-    if ( @dir > 1 and tv_interval ( $t0 ) < 0.5 ) {
-      @dir = choosedirections( midrange(@dir) );
-      if ( @dir > 1 and tv_interval ( $t0 ) < 0.5 ) {
-        @dir = choosedirections( longrange(@dir) );
-      }
-    }
-  }
+  #@dir = choosedirections( immediate(@dir) );
+  #if ( @dir > 1 and tv_interval ( $t0 ) < 0.5 ) {
+    #@dir = choosedirections( nearrange(@dir) );
+    #if ( @dir > 1 and tv_interval ( $t0 ) < 0.5 ) {
+      #@dir = choosedirections( midrange(@dir) );
+      #if ( @dir > 1 and tv_interval ( $t0 ) < 0.5 ) {
+        #@dir = choosedirections( longrange(@dir) );
+      #}
+    #}
+  #}
+  @dir = newclosecombat();
   my $bestmove = shift @dir;
 
   ++$movecount;
-  #warn "Move count: $movecount\n";
-  #warn "Best direction: $bestmove\n";
-  #warn sprintf "Time spent: %s\n", tv_interval ( $t0 );
+  warn "Move count: $movecount\n";
+  warn "Best direction: $bestmove\n";
+  warn sprintf "Time spent: %s\n", tv_interval ( $t0 );
   return ++$bestmove;
 }

@@ -14,6 +14,7 @@ sub new {
   my $self = { @_ };
   bless $self, $class;
   $self->_initialize();
+  $self->precheck();
 }
 
 # Initializer
@@ -27,6 +28,80 @@ sub _initialize {
   return $self;
 }
 
+# Precheck
+# Wall and collision check
+# Deadend check?
+#
+sub precheck {
+  my $self = shift;
+
+  # Did any of us hit a wall?
+  my($mywall,$hiswall);
+  if ( $self->{x1} != $self->{_map}{myPos}[0] and $self->{y1} != $self->{_map}{myPos}[1] ) {
+    $mywall = $self->{map}{"$self->{x1},$self->{y1}"}
+             || $self->{_map}->IsWall( $self->{x1}, $self->{y1} );
+  }
+  if ( $self->{x2} != $self->{_map}{opponentPos}[0] and $self->{y2} != $self->{_map}{opponentPos}[1] ) {
+    $hiswall = $self->{map}{"$self->{x2},$self->{y2}"}
+            || $self->{_map}->IsWall( $self->{x2}, $self->{y2} );
+  }
+  warn "precheck $self->{depth} iswall: $self->{x1},$self->{y1}:$mywall $self->{x2},$self->{y2}:$hiswall\n";
+  return -500 if $mywall and $hiswall;
+  return -1000 if $mywall;
+  return 1000 if $hiswall;
+
+  # Did we collide?
+  return -500 if $self->{x1} == $self->{x2} and $self->{y1} == $self->{y2};
+
+  # All check passed. We are an object now.
+  warn "  passed\n";
+  return $self;
+}
+
+# Add children to this node
+#
+sub addchildren {
+  my $self = shift;
+
+  my($mydir,$hisdir) = $self->possiblemoves();
+  for my $mymove ( @$mydir ) {
+    for my $hismove ( @$hisdir ) {
+
+      my @mynew = newpos( $self->{x1}, $self->{y1}, $mymove );
+      my @hisnew = newpos( $self->{x2}, $self->{y2}, $hismove );
+      my $newmap =
+      { %{$self->{map}}, "$mynew[0],$mynew[1]" => 1, "$hisnew[0],$hisnew[1]" => 1 };
+
+      my $move = new Move(
+        origx => $self->{origx},
+        origy => $self->{origy},
+        x1 => $mynew[0],
+        y1 => $mynew[1],
+        x2 => $hisnew[0],
+        y2 => $hisnew[1],
+        'map' => $newmap,
+        _map => $self->{_map},
+        depth => 1+$self->{depth},
+      );
+
+      if ( ref $move ) {
+        # We got an object
+        warn "Added node @mynew/@hisnew to $self->{depth}\n";
+        $self->{nodes}{$mymove}{$hismove} = {
+          node => $move,
+          score => 1,
+        };
+      } else {
+        # We got a number, so the move was invalid
+        warn "Added number @mynew/@hisnew to $self->{depth}\n";
+        $self->{nodes}{$mymove}{$hismove} = {
+          value => $move,
+        };
+      }
+    }
+  }
+}
+
 # Calculate size of tree
 #
 sub treesize {
@@ -35,8 +110,8 @@ sub treesize {
   my $count = 1;
   for my $mymove ( keys %{ $self->{nodes} } ) {
     for my $hismove ( keys %{ $self->{nodes}{$mymove} } ) {
-      if ( ref $self->{nodes}{$mymove}{$hismove} ) {
-        $count += $self->{nodes}{$mymove}{$hismove}->treesize();
+      if ( $self->{nodes}{$mymove}{$hismove}{node} ) {
+        $count += $self->{nodes}{$mymove}{$hismove}{node}->treesize();
         # ->treesize() for map {( values %$_ )} values %{ $self->{nodes} };
       }
     }
@@ -81,6 +156,8 @@ sub possiblemoves {
     my $iswall = $self->{map}->{"$new[0],$new[1]"} || $self->{_map}->IsWall(@new);
     push @hisdir, $move unless $iswall;
   }
+
+  warn "possible $self->{depth} my @mydir his @hisdir\n";
   
   # Random order, to prevent one particular direction is favored, every time
   return (
@@ -91,7 +168,7 @@ sub possiblemoves {
 
 # Calculate score for a direction. Possibly only for a particular direction.
 # 
-sub improvescore {
+sub improvescore_old {
   my($self) = @_;
 
   #warn "Improvescore depth $self->{depth}\n";
@@ -203,7 +280,38 @@ sub improvescore {
 
   # Temporary score is count of nodes
   return @$mydir + @$hisdir;
+}
 
+sub improvescore {
+  my $self = shift;
+
+  if ( keys %{ $self->{nodes} } ) {
+    my $dynamic;
+    for my $mymove ( keys %{ $self->{nodes} } ) {
+      for my $hismove ( keys %{ $self->{nodes}{$mymove} } ) {
+        my $move = $self->{nodes}{$mymove}{$hismove};
+        #warn "Improving $self->{depth} $move->{node}\n";
+        if ( $move->{value} ) {
+          #warn "$self->{depth} has value $move->{value}\n";
+        } else {
+          $move->{node}->improvescore();
+          if ( $move->{node}{value} ) {
+            delete $move->{node}{score};
+            $move->{node}{value} = $move->{node}{value};
+          } else {
+            ++$dynamic;
+            $move->{score} = $move->{node}->averagescore();
+          }
+        }
+      }
+    }
+    #return $dynamic;
+    return 1;
+  } else {
+    warn "Adding children to $self->{depth}\n";
+    $self->addchildren();
+    return 1;
+  }
 }
 
 # Find out which path was taken
@@ -217,30 +325,48 @@ sub branch {
       #warn "  Compare with $self->{nodes}{$mymove}{$hismove}{x1} $self->{nodes}{$mymove}{$hismove}{y1} / $self->{nodes}{$mymove}{$hismove}{x2} $self->{nodes}{$mymove}{$hismove}{y2}\n";
       
       my $branch;
-      $branch = $self->{nodes}{$mymove}{$hismove}
-          if $self->{_map}{myPos}[0] == $self->{nodes}{$mymove}{$hismove}{x1}
-         and $self->{_map}{myPos}[1] == $self->{nodes}{$mymove}{$hismove}{y1}
-         and $self->{_map}{opponentPos}[0] == $self->{nodes}{$mymove}{$hismove}{x2}
-         and $self->{_map}{opponentPos}[1] == $self->{nodes}{$mymove}{$hismove}{y2};
+      my $node = $self->{nodes}{$mymove}{$hismove}{node};
+      $branch = $node
+          if $self->{_map}{myPos}[0] == $node->{x1}
+         and $self->{_map}{myPos}[1] == $node->{y1}
+         and $self->{_map}{opponentPos}[0] == $node->{x2}
+         and $self->{_map}{opponentPos}[1] == $node->{y2};
 
       if ( $branch ) {
-        warn "Opponent moved from $self->{x2} $self->{y2} to $self->{nodes}{$mymove}{$hismove}{x2} $self->{nodes}{$mymove}{$hismove}{y2}\n";
+        warn "Opponent moved from $self->{x2} $self->{y2} to $node->{x2} $node->{y2}\n";
         return $branch;
       }
     }
   }
 }
 
-# The direction that current has the best score
+# The direction that currently has the best score
 #
 sub bestmove {
   my $self = shift;
 
-  my @dir =
-    sort { $self->{score}{$b} <=> $self->{score}{$a} }
-    keys %{ $self->{score} };
-  use Data::Dumper; warn "Bestscore: " . Dumper $self->{score};
-  #warn "bestmove: @dir\n";
+  #my @dir =
+  #  sort { $self->{score}{$b} <=> $self->{score}{$a} }
+  #  keys %{ $self->{score} };
+  #use Data::Dumper; warn "Bestscore: " . Dumper $self->{score};
+  ##warn "bestmove: @dir\n";
+  #return $dir[0];
+
+  my %score;
+  for my $mymove ( keys %{ $self->{nodes} } ) {
+    for my $hismove ( keys %{ $self->{nodes}{$mymove} } ) {
+      my $move = $self->{nodes}{$mymove}{$hismove};
+      $score{$mymove} += ( $move->{value} || $move->{score} );
+    }
+    $score{$mymove} /= scalar keys %{ $self->{nodes}{$mymove} };
+  }
+
+  use Data::Dumper;
+  warn "movescore: " . Dumper \%score;
+  my @dir = 
+    sort { $score{$b} <=> $score{$a} }
+    keys %score;
+  warn "bestmove: @dir\n";
   return $dir[0];
 }
 
@@ -249,11 +375,44 @@ sub bestmove {
 sub averagescore {
   my $self = shift;
 
+  #my $score;
+  #my $nummoves = scalar keys %{ $self->{score} };
+  #return -1000 unless $nummoves;
+  #$score += $self->{score}{$_} for keys %{ $self->{score} };
+  #return $score / $nummoves;
+
+  # The score is decided once and for all
+  warn "Node $self->{depth} keeps average value $self->{value}\n" if $self->{value};
+  return $self->{value} if $self->{value};
+
   my $score;
-  my $nummoves = scalar keys %{ $self->{score} };
-  return -1000 unless $nummoves;
-  $score += $self->{score}{$_} for keys %{ $self->{score} };
-  return $score / $nummoves;
+  my $count;
+  my $dynamic;
+  for my $mymove ( keys %{ $self->{nodes} } ) {
+    for my $hismove ( keys %{ $self->{nodes}{$mymove} } ) {
+      my $move = $self->{nodes}{$mymove}{$hismove};
+      if ( $move->{value} ) {
+        $score += $move->{value};
+        ++$count;
+      } elsif ( $move->{score} ) {
+        $score += $move->{score};
+        ++$count;
+        ++$dynamic;
+      } else {
+        warn "No score for move $mymove, $hismove\n";
+      }
+    }
+  }
+
+  $score /= $count;
+  if ( $dynamic ) {
+    warn "Node $self->{depth} has average score $score\n";
+    $self->{score} = $score;
+  } else {
+    warn "Node $self->{depth} has average value $score\n";
+    $self->{value} = $score;
+  }
+  return $score;
 }
   
 1;
