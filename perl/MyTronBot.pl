@@ -7,11 +7,13 @@
 
 # module containing Tron library functions
 use Tron;
+#use Move;
 use Time::HiRes qw(gettimeofday tv_interval);
 
 #global variable storing the current state of the map
 my $_map = new Map();
 my $t0;
+my $movecount;
 
 #Main loop
 #   1. Reads in the board and calls chooseMove to pick a random move
@@ -490,25 +492,30 @@ sub closemoves {
   my @movescore;
   for my $mymove ( @mydir ) {
     my @mynew = newpos( $x1, $y1, $mymove );
-    my $averagescore;
+    #my $averagescore;
+    my $score;
     for my $hismove ( @hisdir ) {
       my @hisnew = newpos( $x2, $y2, $hismove );
   
       # Recursive check all possible next moves
       my $newmap =
         { %$map, "$mynew[0],$mynew[1]" => 1, "$hisnew[0],$hisnew[1]" => 1 };
-      my $score =
+      #my $score =
+      $score +=
         closemoves( $origx, $origy, @mynew, @hisnew, $newmap, $depth );
         #warn "  $depth $score @mynew, @hisnew\n";
       #return $score if $score == -1000 or $score == 1000;
-      $averagescore += $score / scalar(@hisdir);
+      #$averagescore += $score / scalar(@hisdir);
     }
+    $movescore[$mymove] = $score / scalar(@hisdir);
   }
 
   # I cannot make sure what he will do since most bots are stupid,
   # but I hope I will choose what best for me.
-  @movescore = reverse sort @movescore;
-  return shift @movescore;
+  #@movescore = reverse sort @movescore;
+  #return shift @movescore;
+  my @bestmoves = sort { $movescore[$b] <=> $movescore[$a] } @mydir;
+  return $bestmoves[0];
 }
 
 ########################################################################
@@ -606,6 +613,8 @@ sub chooseMove {
   }
   my $bestmove = shift @dir;
 
+  ++$movecount;
+  #warn "Move count: $movecount\n";
   #warn "Best direction: $bestmove\n";
   #warn sprintf "Time spent: %s\n", tv_interval ( $t0 );
   return ++$bestmove;
