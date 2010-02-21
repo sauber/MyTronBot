@@ -35,26 +35,31 @@ sub _initialize {
 sub precheck {
   my $self = shift;
 
+  #return $self;
   # Did any of us hit a wall?
   my($mywall,$hiswall);
   if ( $self->{x1} != $self->{_map}{myPos}[0] and $self->{y1} != $self->{_map}{myPos}[1] ) {
     $mywall = $self->{map}{"$self->{x1},$self->{y1}"}
              || $self->{_map}->IsWall( $self->{x1}, $self->{y1} );
+    if ( $mywall ) {
+      use Data::Dumper;
+      warn "mywall at $self->{x1},$self->{y1}: " . Dumper $self->{map};
+    }
   }
   if ( $self->{x2} != $self->{_map}{opponentPos}[0] and $self->{y2} != $self->{_map}{opponentPos}[1] ) {
     $hiswall = $self->{map}{"$self->{x2},$self->{y2}"}
             || $self->{_map}->IsWall( $self->{x2}, $self->{y2} );
   }
-  warn "precheck $self->{depth} iswall: $self->{x1},$self->{y1}:$mywall $self->{x2},$self->{y2}:$hiswall\n";
+  #warn "precheck $self->{depth} iswall: $self->{x1},$self->{y1}:$mywall $self->{x2},$self->{y2}:$hiswall\n";
   return -500 if $mywall and $hiswall;
-  return -1000 if $mywall;
-  return 1000 if $hiswall;
+  return -1000 if $mywall and not $hiswall;
+  return 1000 if $hiswall and not $mywall;
 
   # Did we collide?
   return -500 if $self->{x1} == $self->{x2} and $self->{y1} == $self->{y2};
 
   # All check passed. We are an object now.
-  warn "  passed\n";
+  #warn "  passed\n";
   return $self;
 }
 
@@ -64,13 +69,21 @@ sub addchildren {
   my $self = shift;
 
   my($mydir,$hisdir) = $self->possiblemoves();
+  unless ( @$mydir >= 1 or @$hisdir >= 1 ) {
+    #warn "Cannot add nodes to $self->{depth}\n";
+    #warn $self->rendermap();
+    #die;
+  } else {
+    #warn sprintf "Will add %s children to depth %s\n", ( scalar(@$mydir)*scalar(@$hisdir) ), $self->{depth};
+  }
   for my $mymove ( @$mydir ) {
     for my $hismove ( @$hisdir ) {
 
       my @mynew = newpos( $self->{x1}, $self->{y1}, $mymove );
       my @hisnew = newpos( $self->{x2}, $self->{y2}, $hismove );
       my $newmap =
-      { %{$self->{map}}, "$mynew[0],$mynew[1]" => 1, "$hisnew[0],$hisnew[1]" => 1 };
+      #{ %{$self->{map}}, "$mynew[0],$mynew[1]" => 1, "$hisnew[0],$hisnew[1]" => 1 };
+      { %{$self->{map}}, "$self->{x1},$self->{y1}" => 1, "$self->{x2},$self->{y2}" => 1 };
 
       my $move = new Move(
         origx => $self->{origx},
@@ -86,14 +99,14 @@ sub addchildren {
 
       if ( ref $move ) {
         # We got an object
-        warn "Added node @mynew/@hisnew to $self->{depth}\n";
+        #warn "Added node @mynew/@hisnew to $self->{depth}\n";
         $self->{nodes}{$mymove}{$hismove} = {
           node => $move,
           score => 1,
         };
       } else {
         # We got a number, so the move was invalid
-        warn "Added number @mynew/@hisnew to $self->{depth}\n";
+        #warn "Added number @mynew/@hisnew to $self->{depth}\n";
         $self->{nodes}{$mymove}{$hismove} = {
           value => $move,
         };
@@ -107,6 +120,9 @@ sub addchildren {
 sub treesize {
   my $self = shift;
 
+  my $r = "  " x $self->{depth};
+  $r .= "$self->{depth}: my($self->{x1},$self->{y1}) his($self->{x2},$self->{y2})";
+  #warn "$r\n";
   my $count = 1;
   for my $mymove ( keys %{ $self->{nodes} } ) {
     for my $hismove ( keys %{ $self->{nodes}{$mymove} } ) {
@@ -157,13 +173,14 @@ sub possiblemoves {
     push @hisdir, $move unless $iswall;
   }
 
-  warn "possible $self->{depth} my @mydir his @hisdir\n";
+  #warn "possible $self->{depth} at my($self->{x1},$self->{y1}) his($self->{x2},$self->{y2}) mydir @mydir hisdir @hisdir\n";
   
   # Random order, to prevent one particular direction is favored, every time
-  return (
-    [ sort { rand() <=> rand() } @mydir  ],
-    [ sort { rand() <=> rand() } @hisdir ]
-  );
+  #return (
+  #  [ sort { rand() <=> rand() } @mydir  ],
+  #  [ sort { rand() <=> rand() } @hisdir ]
+  #);
+  return ( \@mydir, \@hisdir );
 }
 
 # Calculate score for a direction. Possibly only for a particular direction.
@@ -308,7 +325,7 @@ sub improvescore {
     #return $dynamic;
     return 1;
   } else {
-    warn "Adding children to $self->{depth}\n";
+    #warn "Adding children to $self->{depth}\n";
     $self->addchildren();
     return 1;
   }
@@ -404,15 +421,50 @@ sub averagescore {
     }
   }
 
-  $score /= $count;
+  if ( $count ) {
+    $score /= $count;
+  } else {
+    $score = -1000;
+  }
   if ( $dynamic ) {
-    warn "Node $self->{depth} has average score $score\n";
+    #warn "Node $self->{depth} has average score $score\n";
     $self->{score} = $score;
   } else {
-    warn "Node $self->{depth} has average value $score\n";
+    #warn "Node $self->{depth} has average value $score\n";
     $self->{value} = $score;
   }
   return $score;
 }
   
+# Display the map, possibly with override data
+#
+sub rendermap {
+  my $self = shift;
+  #my(%override) = @_;
+
+  my($x,$y);
+  my @line;
+  # Original walls
+  for $y ( 0 .. $self->{_map}->{height}-1 ) {
+    for $x ( 0 .. $self->{_map}->{width}-1 ) {
+      $line[$y] .= $self->{_map}->IsWall($x,$y) ? '#' : ' ' ;
+    }
+  }
+  # Additional walls
+  for my $walls ( keys %{ $self->{map} } ) {
+    ($x,$y) = split /,/, $walls;
+    substr($line[$y],$x,1) ='#';
+  }
+  # Player positions
+  $x = $self->{x2} || $self->{_map}->{opponentPos}[0];
+  $y = $self->{y2} || $self->{_map}->{opponentPos}[1];
+  substr($line[$y],$x,1) ='2';
+  $x = $self->{x1} || $self->{_map}->{myPos}[0];
+  $y = $self->{y1} || $self->{_map}->{myPos}[1];
+  substr($line[$y],$x,1) ='1';
+
+  my $r = join "\n", @line;
+  return $r;
+}
+
 1;
