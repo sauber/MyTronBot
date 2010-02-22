@@ -176,15 +176,16 @@ sub possiblemoves {
     my $iswall = $self->{map}->{"$new[0],$new[1]"} || $self->{_map}->IsWall(@new);
     push @hisdir, $move unless $iswall;
   }
+  #@hisdir = ( 0, 1, 2, 3 );
 
   #warn "possible $self->{depth} at my($self->{x1},$self->{y1}) his($self->{x2},$self->{y2}) mydir @mydir hisdir @hisdir\n";
   
   # Random order, to prevent one particular direction is favored, every time
-  #return (
-  #  [ sort { rand() <=> rand() } @mydir  ],
-  #  [ sort { rand() <=> rand() } @hisdir ]
-  #);
-  return ( \@mydir, \@hisdir );
+  return (
+    [ sort { rand() <=> rand() } @mydir  ],
+    [ sort { rand() <=> rand() } @hisdir ]
+  );
+  #return ( \@mydir, \@hisdir );
 }
 
 # Calculate score for a direction. Possibly only for a particular direction.
@@ -326,8 +327,8 @@ sub improvescore {
         }
       }
     }
-    #return $dynamic;
-    return 1;
+    return $dynamic;
+    #return 1;
   } else {
     #warn "Adding children to $self->{depth}\n";
     $self->addchildren();
@@ -404,7 +405,7 @@ sub averagescore {
 
   # The score is decided once and for all
   warn "Node $self->{depth} keeps average value $self->{value}\n" if $self->{value};
-  return $self->{value} if $self->{value};
+  return 1 + $self->{value} if $self->{value};
 
   my $score;
   my $count;
@@ -420,7 +421,7 @@ sub averagescore {
         ++$count;
         ++$dynamic;
       } else {
-        warn "No score for move $mymove, $hismove\n";
+        #warn "No score for move $mymove, $hismove\n";
       }
     }
   }
@@ -437,7 +438,7 @@ sub averagescore {
     #warn "Node $self->{depth} has average value $score\n";
     $self->{value} = $score;
   }
-  return $score;
+  return 1 + $score;
 }
   
 # Display the map, possibly with override data

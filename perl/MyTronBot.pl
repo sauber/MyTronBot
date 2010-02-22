@@ -641,7 +641,7 @@ sub choosedirections {
     map { [ $pos++, $_ ] } @dirscore;        # Associate direction with score
 
   #warn "Choosedirections: @keep\n";
-  return @keep;
+  return sort { rand() <=> rand() } @keep;
 }
 
 # Check immediate, near, mid and long term strategies.
@@ -662,6 +662,9 @@ sub chooseMove {
     #}
   #}
   @dir = newclosecombat();
+  unless ( @dir and $dir[0] >=0 and $dir[0] <= 3 ) {
+    @dir = choosedirections( immediate(@dir) );
+  }
   my $bestmove = shift @dir;
 
   ++$movecount;
