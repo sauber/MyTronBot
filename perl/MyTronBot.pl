@@ -532,8 +532,8 @@ sub newclosecombat {
     # Game started
     # XXX: origx/y should no longer be needed
     $tree = new Move(
-      origx => 0,
-      origy => 0,
+      #origx => 0,
+      #origy => 0,
       x1 => $_map->{myPos}[0],
       y1 => $_map->{myPos}[1],
       x2 => $_map->{opponentPos}[0],
@@ -541,6 +541,7 @@ sub newclosecombat {
       'map' => {},
       _map => $_map,
       depth => 0,
+      starttime => $t0,
     );
     #use Data::Dumper;
     #warn Dumper $tree;

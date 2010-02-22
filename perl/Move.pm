@@ -5,6 +5,7 @@
 ########################################################################
 
 package Move;
+use Time::HiRes qw(tv_interval);
 
 # Constructor
 #
@@ -68,6 +69,8 @@ sub precheck {
 sub addchildren {
   my $self = shift;
 
+  # Make sure there is time for this
+  return if tv_interval ( $self->{starttime} ) > 0.5;
   my($mydir,$hisdir) = $self->possiblemoves();
   unless ( @$mydir >= 1 or @$hisdir >= 1 ) {
     #warn "Cannot add nodes to $self->{depth}\n";
@@ -86,14 +89,15 @@ sub addchildren {
       { %{$self->{map}}, "$self->{x1},$self->{y1}" => 1, "$self->{x2},$self->{y2}" => 1 };
 
       my $move = new Move(
-        origx => $self->{origx},
-        origy => $self->{origy},
+        #origx => $self->{origx},
+        #origy => $self->{origy},
         x1 => $mynew[0],
         y1 => $mynew[1],
         x2 => $hisnew[0],
         y2 => $hisnew[1],
         'map' => $newmap,
         _map => $self->{_map},
+        starttime => $self->{starttime},
         depth => 1+$self->{depth},
       );
 
