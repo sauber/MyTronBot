@@ -12,7 +12,7 @@ use Time::HiRes qw(gettimeofday tv_interval);
 
 #global variable storing the current state of the map
 my $_map = new Map();
-my $t0;
+my %t0;
 my $movecount;
 my $tree;
 
@@ -22,7 +22,7 @@ my $tree;
 #   3. Calls Tron::MakeMove on the move to pass it to the game engine
 while (1) {
   $_map->ReadFromFile();
-  $t0 = [gettimeofday()];
+  $t0{gettime} = [gettimeofday()];
   my $move = chooseMove();
   Tron::MakeMove($move);
 }
@@ -484,7 +484,7 @@ sub closemoves {
   return 0 if $depth <= 0; # It's undecided
 
   # XXX: Are we out of time?
-  if ( tv_interval ( $t0 ) > 0.5 ) {
+  if ( tv_interval ( $t0{gettime} ) > 0.8 ) {
     #warn "Timeout at level $depth\n";
     return 0;
   }
@@ -525,15 +525,13 @@ sub newclosecombat {
 
   if ( $tree ) {
     # We are alredy into game
-    warn sprintf "Tree size before: %s\n", $tree->treesize();
+    #warn sprintf "Tree size before: %s\n", $tree->treesize();
     $tree = $tree->branch();
-    warn sprintf "Tree size after : %s\n", $tree->treesize();
+    #warn sprintf "Tree size after : %s\n", $tree->treesize() if $tree;
   } else {
     # Game started
     # XXX: origx/y should no longer be needed
     $tree = new Move(
-      #origx => 0,
-      #origy => 0,
       x1 => $_map->{myPos}[0],
       y1 => $_map->{myPos}[1],
       x2 => $_map->{opponentPos}[0],
@@ -541,23 +539,26 @@ sub newclosecombat {
       'map' => {},
       _map => $_map,
       depth => 0,
-      starttime => $t0,
+      starttime => \%t0,
     );
     #use Data::Dumper;
-    #warn Dumper $tree;
+    #warn "game starter tree:" . Dumper $tree;
+    #warn "Started new tree\n";
   }
   #$tree = $tree->branch();
   #use Data::Dumper;
   #warn Dumper $tree;
-  my $iterations;
+  my $iterations = 0;
+  #$tree->improvescore();
+  #die "improved tree:" . Dumper $tree;
   #$tree->improvescore();
   #$tree->improvescore();
   #$tree->improvescore();
-  #$tree->improvescore();
-  ++$iterations while $tree->improvescore() and tv_interval ( $t0 ) < 0.4;
-  warn "Did $iterations iterations\n";
+  ++$iterations while $tree and $tree->improvescore() and tv_interval ( $t0{gettime} ) < 0.8;
+  #warn "Did $iterations iterations\n";
+  #die "improved tree:" . Dumper $tree;
   #warn Dumper $tree;
-  warn sprintf "Tree size after : %s\n", $tree->treesize();
+  #warn sprintf "Tree size after : %s\n", $tree->treesize() if $tree;
   #getscoreforeach @dir;
   #return bestscore;
   #my @result = (0, 0, 0, 0);
@@ -565,7 +566,8 @@ sub newclosecombat {
   #  $result[$move] = $tree->{score}{$_} || 0;
   #};
   #return @result;
-  $tree->bestmove();
+  return $tree->bestmove() if $tree;
+  return ();
 }
 
 ########################################################################
@@ -662,14 +664,18 @@ sub chooseMove {
     #}
   #}
   @dir = newclosecombat();
-  unless ( @dir and $dir[0] >=0 and $dir[0] <= 3 ) {
-    @dir = choosedirections( immediate(@dir) );
+  use Data::Dumper;
+  #warn "closecombat: " . Dumper \@dir;
+  unless ( @dir and defined $dir[0] and $dir[0] >=0 and $dir[0] <= 3 ) {
+    #warn "Switching to immediate strategy\n";
+    @dir = choosedirections( immediate(0,1,2,3) );
   }
   my $bestmove = shift @dir;
+  ++$bestmove;
 
   ++$movecount;
-  warn "Move count: $movecount\n";
-  warn "Best direction: $bestmove\n";
-  warn sprintf "Time spent: %s\n", tv_interval ( $t0 );
-  return ++$bestmove;
+  #warn "Move count: $movecount\n";
+  #warn "Best direction: $bestmove\n";
+  #warn sprintf "Time spent: %s\n", tv_interval ( $t0{gettime} );
+  return $bestmove;
 }
