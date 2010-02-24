@@ -484,7 +484,7 @@ sub closemoves {
   return 0 if $depth <= 0; # It's undecided
 
   # XXX: Are we out of time?
-  if ( tv_interval ( $t0{gettime} ) > 0.8 ) {
+  if ( tv_interval ( $t0{gettime} ) > 0.6 ) {
     #warn "Timeout at level $depth\n";
     return 0;
   }
@@ -554,7 +554,7 @@ sub newclosecombat {
   #$tree->improvescore();
   #$tree->improvescore();
   #$tree->improvescore();
-  ++$iterations while $tree and $tree->improvescore() and tv_interval ( $t0{gettime} ) < 0.8;
+  ++$iterations while $tree and $tree->improvescore() and tv_interval ( $t0{gettime} ) < 0.6;
   #warn "Did $iterations iterations\n";
   #die "improved tree:" . Dumper $tree;
   #warn Dumper $tree;

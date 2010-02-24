@@ -105,7 +105,7 @@ sub addchildren {
   my $self = shift;
 
   # Make sure there is time for this
-  return if tv_interval ( $self->{starttime}{gettime} ) > 0.8;
+  return if tv_interval ( $self->{starttime}{gettime} ) > 0.6;
   #my($mydir,$hisdir) = $self->possiblemoves();
   my $mydir = $self->{mydir};
   my $hisdir = $self->{hisdir};
@@ -403,7 +403,7 @@ sub improvescore_old2 {
 sub improvescore {
   my $self = shift;
 
-  return if tv_interval ( $self->{starttime}{gettime} ) > 0.8;
+  return if tv_interval ( $self->{starttime}{gettime} ) > 0.6;
   if ( keys %{ $self->{nodes} } ) {
     for my $mymove ( sort { rand() <=> rand() } keys %{ $self->{nodes} } ) {
       for my $hismove ( sort { rand() <=> rand() } keys %{ $self->{nodes}{$mymove} } ) {
